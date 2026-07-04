@@ -1,0 +1,39 @@
+[
+  {
+    "id": "1783062760850",
+    "candidate_name": "SAMMAR GAIKWAD",
+    "technical_score": 8,
+    "leadership_score": 9,
+    "core_competencies": [
+      "UI/UX Design",
+      "Web Development (HTML, CSS, JavaScript, React)",
+      "Android App Development",
+      "Project Management",
+      "Team Leadership",
+      "IoT Solutions (ESP32, ESP8266)",
+      "Cyber Security (Ethical Hacking, Network Security, Vulnerability Assessment)",
+      "Full-Stack Architecture",
+      "Natural Language Processing (NLP)",
+      "System Design",
+      "Business Development",
+      "Client Strategy"
+    ],
+    "red_flags": [
+      "Several dates (company founding, projects, certifications) are listed in the future (2025, 2026), suggesting the resume might be a projection or contains chronological inconsistencies that need clarification.",
+      "Significant overlap between B.Tech studies, co-founding a company, and multiple projects. While commendable, this could indicate a lack of full-time dedicated experience in a single role and potential time management challenges.",
+      "Limited formal professional experience outside of own venture and a short internship, which is typical for a student but notable for roles requiring extensive industry experience."
+    ],
+    "recommended_interview_questions": [
+      "Could you elaborate on the timelines presented in your resume, particularly the future dates for ADAPTS.CO and certain projects, and how you're managing these various commitments concurrently with your B.Tech studies?",
+      "As a Co-Founder of ADAPTS.CO, what were the most significant challenges you encountered in building and scaling the studio from the ground up, and what key lessons did you learn?",
+      "Can you describe a specific project where you were solely responsible for the full-stack architecture? What were your design choices and the impact of those decisions?",
+      "Given your experience in both IoT and cybersecurity, how do you approach securing IoT devices and systems from common vulnerabilities?",
+      "You led 'Vertex Club' as Technical Co-Head. Can you provide an example of a technical initiative you directed and how you ensured its successful execution?",
+      "Tell us about a time when you had to make a critical business development decision for ADAPTS.CO. What was the situation, your decision-making process, and the outcome?"
+    ],
+    "job_alignment_score": 0,
+    "alignment_explanation": "No job description provided.",
+    "missing_qualifications": [],
+    "analyzedAt": "2026-07-03T07:12:40.850Z"
+  }
+]
