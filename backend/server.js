@@ -262,22 +262,12 @@ ${resumeText}`;
       ]
     };
 
-    const settings = await getActiveSettings();
-    const model = settings.geminiModel || 'gemini-2.5-flash';
-    const response = await ai.models.generateContent({
-      model: model,
-      contents: prompt,
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: responseSchema
-      }
+    console.log('[API] Processing query through unified LLM helper...');
+    const analysisResult = await queryLLM({
+      prompt,
+      systemInstruction: 'You are an expert HR recruitment assistant. Evaluate the candidate and match their background to the requirements.',
+      responseSchema
     });
-
-    const responseText = response.text;
-    console.log('[API] Received response from Gemini.');
-    
-    // Parse response text to ensure validity
-    const analysisResult = JSON.parse(responseText);
     
     return res.status(200).json(analysisResult);
   } catch (error) {
@@ -417,18 +407,11 @@ ${resumeText}`;
           ]
         };
 
-        const settings = await getActiveSettings();
-        const model = settings.geminiModel || 'gemini-2.5-flash';
-        const response = await ai.models.generateContent({
-          model: model,
-          contents: prompt,
-          config: {
-            responseMimeType: 'application/json',
-            responseSchema: responseSchema
-          }
+        const assessment = await queryLLM({
+          prompt,
+          systemInstruction: 'You are an expert HR recruitment assistant. Extract structured candidate details from the CV text.',
+          responseSchema
         });
-
-        const assessment = JSON.parse(response.text);
         
         // Auto-save to pipeline
         const newCandidate = {
@@ -883,12 +866,24 @@ async function queryLLM({ prompt, systemInstruction, responseSchema }) {
       headers['Authorization'] = `Bearer ${key}`;
     }
 
-    console.log(`[NIM] Requesting completions at host: ${settings.hostUri}`);
-    const response = await fetch(settings.hostUri, {
+    // Dynamic Cloud NIM Integration:
+    // If we have an API key and the host URI is still pointing to localhost/127.0.0.1,
+    // automatically rewrite it to the official NVIDIA integrate API endpoint.
+    let targetUri = settings.hostUri;
+    let modelName = "meta/llama3-70b-instruct"; // local default
+    
+    if (key && (key.startsWith('nvapi-') || targetUri.includes('localhost') || targetUri.includes('127.0.0.1'))) {
+      targetUri = 'https://integrate.api.nvidia.com/v1/chat/completions';
+      modelName = 'meta/llama-3.1-70b-instruct'; // Cloud NIM ID
+      console.log(`[NIM Cloud] Local host URI redirected to NVIDIA Cloud Catalog: ${targetUri} (using model: ${modelName})`);
+    }
+
+    console.log(`[NIM] Requesting completions at host: ${targetUri}`);
+    const response = await fetch(targetUri, {
       method: 'POST',
       headers,
       body: JSON.stringify({
-        model: "meta/llama3-70b-instruct",
+        model: modelName,
         messages: [
           { role: 'system', content: systemInstruction },
           { role: 'user', content: prompt }
