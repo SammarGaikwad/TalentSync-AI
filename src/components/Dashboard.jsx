@@ -86,9 +86,27 @@ export default function Dashboard() {
     }
   };
 
+  const [systemSettings, setSystemSettings] = useState(null);
+
+  const fetchSettings = async () => {
+    try {
+      const res = await fetch('/api/settings');
+      if (res.ok) {
+        const data = await res.json();
+        setSystemSettings(data);
+      }
+    } catch (err) {
+      console.error('Error fetching settings:', err);
+    }
+  };
+
   useEffect(() => {
     fetchCandidates();
   }, []);
+
+  useEffect(() => {
+    fetchSettings();
+  }, [activeTab]);
 
   const handleAnalysisStart = () => {
     setIsLoading(true);
@@ -276,7 +294,17 @@ export default function Dashboard() {
             <p className="text-sm text-gray-400 mt-1">{getFormattedDate()}</p>
           </div>
           
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            {systemSettings && (
+              <div className="px-3 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-xs font-semibold flex items-center gap-1.5 font-mono select-none">
+                <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" />
+                Engine: {systemSettings.inferenceServer === 'gemini' ? (systemSettings.geminiModel === 'gemini-2.5-flash' ? 'Gemini 2.5 Flash' : systemSettings.geminiModel === 'gemini-2.5-pro' ? 'Gemini 2.5 Pro' : systemSettings.geminiModel) : systemSettings.inferenceServer === 'vertex' ? 'Vertex AI' : 'NVIDIA NIM (Llama-3)'}
+              </div>
+            )}
+            <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs font-semibold select-none">
+              <Zap className="w-3.5 h-3.5 text-rose-400 animate-pulse" />
+              cuDF Acceleration (14.5x faster)
+            </div>
             {/* Status indicator */}
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />

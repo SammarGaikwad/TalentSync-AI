@@ -6,6 +6,13 @@
 [![Inference](https://img.shields.io/badge/Inference-Google%20Gemini%20%2F%20NVIDIA%20NIM-purple)](https://aistudio.google.com/)
 [![RAPIDS](https://img.shields.io/badge/Analytics-NVIDIA%20RAPIDS%20cuDF-76b900)](https://rapids.ai/)
 
+---
+
+## 🏆 Hackathon Submission Guide
+To review criteria alignment, see our detailed [HACKATHON_SUBMISSION.md](file:///d:/projects/TalentSync%20AI/HACKATHON_SUBMISSION.md) mapping core multi-agent architecture and hardware-cloud synergy.
+
+---
+
 **TalentSync AI** is a premium, high-performance recruitment and talent analytics dashboard designed to ingest candidate CVs, parse competencies, match candidates against job specifications, and orchestrate autonomous multi-agent pipelines. It features state-of-the-art glassmorphic design and hardware-accelerated text preprocessing benchmarks.
 
 ---

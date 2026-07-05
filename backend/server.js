@@ -10,8 +10,17 @@ import { Storage } from '@google-cloud/storage';
 import { BigQuery } from '@google-cloud/bigquery';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import fsSync from 'fs';
 
 const execAsync = promisify(exec);
+
+// Import modular agents
+import { CoordinatorAgent } from './agents/CoordinatorAgent.js';
+import { ScreenerAgent } from './agents/ScreenerAgent.js';
+import { VerificationAgent } from './agents/VerificationAgent.js';
+import { InterviewerAgent } from './agents/InterviewerAgent.js';
+import { OutreachAgent } from './agents/OutreachAgent.js';
+
 
 // Resolve the best Python command executable
 async function getPythonCommand() {
@@ -41,11 +50,16 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Hardened CORS Origin configuration
-const allowedOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173'];
 app.use(cors({
   origin: function (origin, callback) {
     if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) !== -1) {
+    // Allow any localhost or 127.0.0.1 ports in development
+    if (
+      origin.startsWith('http://localhost:') || 
+      origin.startsWith('http://127.0.0.1:') || 
+      origin === 'http://localhost' || 
+      origin === 'http://127.0.0.1'
+    ) {
       return callback(null, true);
     }
     return callback(new Error('CORS Policy: Origin not allowed.'), false);
@@ -453,7 +467,7 @@ const DB_FILE = path.join(DB_DIR, 'candidates.json');
 const SETTINGS_FILE = path.join(DB_DIR, 'settings.json');
 
 const DEFAULT_SETTINGS = {
-  inferenceServer: 'nim',
+  inferenceServer: 'gemini',
   hostUri: 'http://localhost:8000/v1/chat/completions',
   cudfAccelerated: true,
   parallelAgents: true,
@@ -667,7 +681,7 @@ app.post('/api/gcs-sync', apiRateLimiter, async (req, res) => {
 
   // Validate bucketName format (alphanumeric, hyphens, underscores, dots, or gs:// prefix, no ..)
   const bucketNameStr = String(bucketName);
-  if (!/^[a-zA-Z0-9\-_\.\/]+$/.test(bucketNameStr) || bucketNameStr.includes('..')) {
+  if (!/^[a-zA-Z0-9\-_./:]+$/.test(bucketNameStr) || bucketNameStr.includes('..')) {
     return res.status(400).json({ error: 'Invalid bucket name format.' });
   }
 
@@ -763,7 +777,7 @@ app.post('/api/bigquery-export', apiRateLimiter, async (req, res) => {
 
   // Validate tableDestination format (alphanumeric, hyphens, underscores, dots, colons, no ..)
   const tableDestStr = String(tableDestination);
-  if (!/^[a-zA-Z0-9\-_\.:]+$/.test(tableDestStr) || tableDestStr.includes('..')) {
+  if (!/^[a-zA-Z0-9\-_.:]+$/.test(tableDestStr) || tableDestStr.includes('..')) {
     return res.status(400).json({ error: 'Invalid destination table format.' });
   }
 
@@ -822,144 +836,17 @@ app.delete('/api/candidates/:id', async (req, res) => {
   }
 });
 
-// ==========================================
-// Autonomous Multi-Agent System Orchestrator
-// ==========================================
 
-function getSimulatedTelemetry(agentName) {
-  const vramUsed = parseFloat((Math.random() * 1.5 + 6.2).toFixed(1)); // 6.2 - 7.7 GB
-  const tokenSec = Math.floor(Math.random() * 15) + 85; // 85 - 100 tokens/sec
-  const timeMs = Math.floor(Math.random() * 600) + 900; // 900 - 1500 ms
-  
-  let engine = 'NVIDIA NIM (Llama-3-70B)';
-  let cuDfLog = '';
-  
-  if (agentName === 'ScreenerAgent') {
-    engine = 'NVIDIA cuDF + NIM Hybrid';
-    cuDfLog = '[NVIDIA cuDF] Cleaning & tokenizing CV text block in parallel GPU memory...';
-  } else if (agentName === 'VerificationAgent') {
-    engine = 'NVIDIA NIM Embeddings';
-}
-  
-  return {
-    engine,
-    vramUsed,
-    vramTotal: 24.0,
-    tokenSec,
-    timeMs,
-    cuDfLog
-  };
-}
-
-function generateFallbackData(agentName, candidate, mission, feedback) {
-  const name = candidate?.candidate_name || 'Candidate';
-  const competencies = candidate?.core_competencies || ['Software Engineering'];
-  
-  if (agentName === 'ScreenerAgent') {
-    return {
-      summary: `Pre-screened profile for ${name}. The candidate shows deep expertise in ${competencies.slice(0, 3).join(', ')} but exhibits potential gaps in advanced cloud scaling architectures.`,
-      strengths: [
-        `Extensive practical experience with ${competencies[0] || 'Modern Technologies'}.`,
-        'Demonstrated history of project ownership and code delivery.',
-        'Strong collaboration indicators from prior roles.'
-      ],
-      gaps: [
-        'Lack of formal certification in Kubernetes or high-throughput stream processing.',
-        'Limited exposure to large-scale multi-region database replication.'
-      ],
-      readinessRating: Math.floor(Math.random() * 3) + 7
-    };
-  }
-  if (agentName === 'VerificationAgent') {
-    return {
-      githubCheck: {
-        status: 'Verified (Simulated)',
-        reposFound: [`${name.toLowerCase().replace(/\s+/g, '-')}-portfolio`, 'microservices-boilerplate'],
-        contributions: 'Active code contributions matching claims in React, Node, and Python.'
-      },
-      linkedinCheck: {
-        status: 'Verified Profile',
-        tenureAverage: '2.5 years per organization',
-        industryMatches: 'Verified technical job titles match resume timeline.'
-      },
-      certificationCheck: {
-        status: 'Partially Verified',
-        certsVerified: ['AWS Certified Developer Associate']
-      },
-      summary: `Simulated background sync successful. Key career milestones and repository contents for ${name} check out successfully.`
-    };
-  }
-  if (agentName === 'InterviewerAgent') {
-    let q1 = `Given your experience with ${competencies[0] || 'development'}, how would you architecture a low-latency caching layer to optimize API read operations?`;
-    let q2 = `In your prior projects, how did you handle data consistency issues during cross-service API communication?`;
-    let q3 = `What strategies do you deploy to test and debug complex asynchronous background workers in Python or Node.js?`;
-
-    if (feedback && feedback.trim().length > 0) {
-      q1 = `[Refined] How do you address this specific requirement: "${feedback}"?`;
-      q2 = `Given the feedback to focus on "${feedback}", explain how you would design a scalable solution using ${competencies.slice(0, 2).join('/')}.`;
-      q3 = `Explain the failure modes and edge cases associated with implementing a: "${feedback}" workflow.`;
-    }
-
-    return {
-      questions: [
-        {
-          question: q1,
-          targetConcept: feedback ? 'Refined Parameter Check' : 'System Architecture & Caching Strategy',
-          expectedAnswer: 'Should mention Redis/Memcached, write-through vs write-behind caching, and invalidation strategies.'
-        },
-        {
-          question: q2,
-          targetConcept: feedback ? 'Targeted Recruiter Goal' : 'Distributed Systems & Eventual Consistency',
-          expectedAnswer: 'Should detail saga pattern, outbox pattern, or message queues like RabbitMQ/Kafka.'
-        },
-        {
-          question: q3,
-          targetConcept: feedback ? 'Edge Case Handling' : 'Debugging & Quality Assurance',
-          expectedAnswer: 'Should reference logging telemetry, mocks, and worker-isolated test databases.'
-        }
-      ]
-    };
-  }
-  if (agentName === 'OutreachAgent') {
-    let subject = `Opportunity: Senior Engineering Role fit for ${name}`;
-    let body = `Hi ${name.split(' ')[0]},\n\nI hope you're doing well! I'm reaching out because I came across your background and was incredibly impressed by your work with ${competencies.slice(0, 3).join(', ')}.\n\nWe are looking for a key contributor to lead our next-generation multi-agent autonomous engineering pipelines. Given your solid scores and background, I think you'd be a fantastic fit.\n\nAre you available for a brief chat this week?\n\nBest regards,\nRecruiting Team`;
-
-    if (feedback && feedback.trim().length > 0) {
-      subject = `[Refined] Opportunity regarding: ${feedback}`;
-      body = `Hi ${name.split(' ')[0]},\n\nFollowing up on our team's assessment regarding "${feedback}". We were highly impressed with your matching stack, particularly ${competencies.slice(0, 2).join(' and ')}.\n\nLet's connect this week to discuss details!\n\nBest regards,\nRecruiting Team`;
-    }
-
-    return {
-      subject,
-      body
-    };
-  }
-  return {};
-}
-
-function generateFallbackReasoning(agentName, candidate, mission, feedback) {
-  const name = candidate?.candidate_name || 'Candidate';
-  const stack = (candidate?.core_competencies || []).join(', ');
-  
-  if (agentName === 'ScreenerAgent') {
-    return `Evaluated resume text profile for candidate ${name}. Checked alignment with mission: "${mission}". Identified key matching technical stack markers: [${stack}]. Identified career strengths, noting deep competency in ${candidate.core_competencies?.[0] || 'core technologies'}. Highlighted areas of improvement regarding modern cloud orchestration certifications and scaling patterns. Assigned readiness score of 8/10.`;
-  }
-  if (agentName === 'VerificationAgent') {
-    return `Checked background indicators for candidate ${name}. Cross-matched core stacks with candidate claims. Searched GitHub for public projects matching ${candidate.core_competencies?.slice(0, 2).join(' and ') || 'competencies'}, confirming contributions to active repositories. Validated LinkedIn employment history, showing average tenures of 2.5+ years and verifying job titles matching resume records. Checked and verified cloud developer certification records.`;
-  }
-  if (agentName === 'InterviewerAgent') {
-    return `Identified gaps in candidate ${name}'s cloud architecture and asynchronous worker handling. Formulated 3 advanced technical questions. Directives/Feedback incorporated: "${feedback || 'None'}". Tailored questions to explore practical knowledge of low-latency caching, event-driven service interaction consistency, and testing queue workers under load.`;
-  }
-  if (agentName === 'OutreachAgent') {
-    return `Generated recruiter outreach email sequence for ${name}. Formulated personalized subject line emphasizing work with ${candidate.core_competencies?.slice(0, 2).join(' and ') || 'technologies'}. Wrote the body highlighting direct team coordination matches and technical competency achievements, inviting candidate for an interview. Directives/Feedback incorporated: "${feedback || 'None'}"`;
-  }
-  return 'Standard multi-agent collaboration logic evaluated.';
-}
 
 async function getActiveSettings() {
   try {
     const data = await fs.readFile(SETTINGS_FILE, 'utf-8');
-    return JSON.parse(data);
+    const parsed = JSON.parse(data);
+    return {
+      ...DEFAULT_SETTINGS,
+      ...parsed,
+      prompts: parsed.prompts ? { ...DEFAULT_SETTINGS.prompts, ...parsed.prompts } : DEFAULT_SETTINGS.prompts
+    };
   } catch {
     return DEFAULT_SETTINGS;
   }
@@ -1051,120 +938,7 @@ app.post('/api/agent/init', apiRateLimiter, async (req, res) => {
     }
 
     const settings = await getActiveSettings();
-    const plannerSystemPrompt = settings.prompts.planner;
-
-    const plannerPrompt = `Analyze candidate: ${candidate.candidate_name}
-    Key Competencies: [${(candidate.core_competencies || []).join(', ')}]
-    Technical Score: ${candidate.technical_score}/10
-    Leadership Score: ${candidate.leadership_score}/10
-    Job Fit Alignment Score: ${candidate.job_alignment_score || 0}/10
-    
-    Recruiting Mission: "${mission}"
-    
-    Formulate a customized list of steps executing specialized subtasks to fulfill the mission. 
-    Select which tools each step needs.
-    Available Tools:
-    - cudf-cleaner: NVIDIA cuDF parallel string preprocessor. Run this first if the mission requires screening or formatting the text.
-    - github-search: Simulated search matching repositories and issues for code check.
-    - linkedin-sync: Work history timeline and title checks.
-    - bq-warehouse: Syncing assessment metrics to BigQuery warehouse.
-
-    Output format:
-    A JSON object containing:
-    {
-      "steps": [
-        {
-          "stepId": 1,
-          "agentName": "ScreenerAgent" | "VerificationAgent" | "InterviewerAgent" | "OutreachAgent",
-          "title": "Title of step...",
-          "description": "Short description of what the agent will do...",
-          "requiresApproval": true | false,
-          "targetTools": ["tool-name", ...]
-        },
-        ...
-      ]
-    }
-    Make sure each step has a logical progression (e.g. ScreenerAgent -> VerificationAgent -> InterviewerAgent -> OutreachAgent). RequiresApproval should be true for steps like OutreachAgent or InterviewerAgent that generate content sent to candidates.`;
-
-    const schema = {
-      type: 'object',
-      properties: {
-        steps: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              stepId: { type: 'integer' },
-              agentName: { type: 'string' },
-              title: { type: 'string' },
-              description: { type: 'string' },
-              requiresApproval: { type: 'boolean' },
-              targetTools: { type: 'array', items: { type: 'string' } }
-            },
-            required: ['stepId', 'agentName', 'title', 'description', 'requiresApproval', 'targetTools']
-          }
-        }
-      },
-      required: ['steps']
-    };
-
-    let plan = null;
-    try {
-      plan = await queryLLM({
-        prompt: plannerPrompt,
-        systemInstruction: plannerSystemPrompt,
-        responseSchema: schema
-      });
-    } catch (llmError) {
-      console.warn(`[CoordinatorAgent] LLM planning failed: ${llmError.message}. Using dynamic rule-based planning fallback.`);
-      
-      const steps = [];
-      let stepCounter = 1;
-      
-      steps.push({
-        stepId: stepCounter++,
-        agentName: 'ScreenerAgent',
-        title: 'Resume Screening & Competency Mapping',
-        description: `Verify tech core alignment for "${mission}" and extract strengths/gaps.`,
-        requiresApproval: false,
-        targetTools: ['cudf-cleaner']
-      });
-
-      if (mission.toLowerCase().includes('verify') || mission.toLowerCase().includes('github') || mission.toLowerCase().includes('check') || mission.toLowerCase().includes('outreach') || mission.toLowerCase().includes('challenge') || mission.toLowerCase().includes('prep')) {
-        steps.push({
-          stepId: stepCounter++,
-          agentName: 'VerificationAgent',
-          title: 'Code & Profile Verification Sync',
-          description: `Scan repositories and employment history matching competencies.`,
-          requiresApproval: false,
-          targetTools: ['github-search', 'linkedin-sync']
-        });
-      }
-
-      if (mission.toLowerCase().includes('challenge') || mission.toLowerCase().includes('question') || mission.toLowerCase().includes('interview') || mission.toLowerCase().includes('prep') || mission.toLowerCase().includes('assessment') || mission.toLowerCase().includes('check') || mission.toLowerCase().includes('screen')) {
-        steps.push({
-          stepId: stepCounter++,
-          agentName: 'InterviewerAgent',
-          title: 'Targeted Challenge Creator',
-          description: `Formulate advanced technical assessment challenges targeting gaps.`,
-          requiresApproval: true,
-          targetTools: []
-        });
-      }
-
-      if (mission.toLowerCase().includes('outreach') || mission.toLowerCase().includes('email') || mission.toLowerCase().includes('contact') || mission.toLowerCase().includes('prep') || mission.toLowerCase().includes('screen')) {
-        steps.push({
-          stepId: stepCounter++,
-          agentName: 'OutreachAgent',
-          title: 'Personalized Outreach Draft',
-          description: `Generate tailored recruiter outreach drafts based on candidate profile.`,
-          requiresApproval: true,
-          targetTools: ['bq-warehouse']
-        });
-      }
-
-      plan = { steps };
-    }
+    const plan = await CoordinatorAgent.init({ candidate, mission, queryLLM, settings });
 
     res.json({
       success: true,
@@ -1180,198 +954,55 @@ app.post('/api/agent/init', apiRateLimiter, async (req, res) => {
 
 // Route to execute a specific workflow step
 app.post('/api/agent/execute-step', apiRateLimiter, async (req, res) => {
-  const { stepId, agentName, candidate, mission, previousResults, feedback } = req.body;
+  const { stepId, agentName, candidate, mission, previousResults, feedback, targetTools } = req.body;
   console.log(`[Agent Orchestration] Executing step ${stepId} via agent: ${agentName}`);
-  
-  const telemetry = getSimulatedTelemetry(agentName);
   
   try {
     const settings = await getActiveSettings();
-    const agentPromptKey = agentName.replace('Agent', '').toLowerCase();
-    const systemInstruction = settings.prompts[agentPromptKey] || '';
-    
-    // Determine step tools from previous steps configurations (or defaults if not present)
-    const targetTools = req.body.targetTools || [];
-    
-    // 1. Tool execution phase
-    const toolLogs = [];
-    const toolOutputs = {};
-
-    for (const tool of targetTools) {
-      if (tool === 'cudf-cleaner') {
-        try {
-          console.log('[Tools] Triggering NVIDIA cuDF parallel preprocessing script...');
-          const scriptPath = path.join(process.cwd(), 'analytics', 'gpu_pipeline.py');
-          const pythonCmd = await getPythonCommand();
-          const command = `${pythonCmd} "${scriptPath}" --bucket "gs://talentsync-candidate-resumes" --table "gcp-talent-project.warehouse.evaluations"`;
-          
-          toolLogs.push(`[System] Spawning python process: ${command}`);
-          const { stdout, stderr } = await execAsync(command);
-          if (stderr) toolLogs.push(`[stderr] ${stderr}`);
-          
-          stdout.split('\n').forEach(l => {
-            if (l.trim()) toolLogs.push(l.trim());
-          });
-
-          const jsonIndex = stdout.indexOf('{');
-          if (jsonIndex !== -1) {
-            toolOutputs['cudf-cleaner'] = JSON.parse(stdout.substring(jsonIndex));
-          } else {
-            throw new Error('No JSON output from script');
-          }
-        } catch (err) {
-          console.warn(`[Tools Warning] Python script execution failed/not available: ${err.message}. Running in local high-speed simulator.`);
-          toolLogs.push('[NVIDIA cuDF] Spawning GPU parallel clean buffer on device...');
-          toolLogs.push('[NVIDIA cuDF] Cleaning & tokenizing CV text block in parallel GPU memory...');
-          toolLogs.push('[NVIDIA cuDF] Parallel casing and regex substitutions completed.');
-          toolLogs.push('[NVIDIA cuDF] Executed in 13.8ms on NVIDIA L4 GPU. (14.5x acceleration)');
-          
-          toolOutputs['cudf-cleaner'] = {
-            engine: "NVIDIA L4 Tensor Core GPU",
-            dataset_size: 5000,
-            cpu_duration_ms: 198,
-            gpu_duration_ms: 13,
-            speedup_factor: 14.5,
-            status: "Success"
-          };
-        }
-      } else if (tool === 'github-search') {
-        toolLogs.push(`[GitHub Search] Querying repository index for candidate: "${candidate.candidate_name}"`);
-        const repos = [
-          `${candidate.candidate_name.toLowerCase().replace(/\s+/g, '-')}-portfolio`,
-          `${candidate.core_competencies?.[0]?.toLowerCase() || 'code'}-utilities`,
-          'system-orchestration-boilerplate'
-        ];
-        toolLogs.push(`[GitHub Search] Found ${repos.length} matches: [${repos.join(', ')}]`);
-        toolLogs.push(`[GitHub Search] Verifying repository active commits and readmes...`);
-        toolOutputs['github-search'] = {
-          status: 'Verified (Active)',
-          reposFound: repos,
-          contributions: 'Significant contributions matching technical claims. Active code updates in the past 30 days.'
-        };
-      } else if (tool === 'linkedin-sync') {
-        toolLogs.push(`[LinkedIn Sync] Fetching employment profile timeline...`);
-        toolLogs.push(`[LinkedIn Sync] Validating title tenures and team lead claims...`);
-        toolLogs.push(`[LinkedIn Sync] Checked 3 historical roles. Total matches validated.`);
-        toolOutputs['linkedin-sync'] = {
-          status: 'Verified Profile',
-          tenureAverage: '2.8 years per organization',
-          industryMatches: 'Work timeline verified. Candidate holds titles matching technical resume milestones.'
-        };
-      } else if (tool === 'bq-warehouse') {
-        toolLogs.push(`[BigQuery Sync] Exporting evaluation record metrics to BigQuery...`);
-        toolLogs.push(`[BigQuery Sync] Synced dataset table: gcp-talent-project.warehouse.evaluations`);
-        toolLogs.push(`[BigQuery Sync] Load job completed. Row ID: ${Date.now()}`);
-        toolOutputs['bq-warehouse'] = {
-          success: true,
-          table: 'warehouse.evaluations',
-          rowsSynced: 1
-        };
-      }
-    }
-
-    // 2. Query Agent LLM reasoning block
-    let result = null;
-    let reasoning = "";
-
-    const prompt = `You are the ${agentName}.
-    Mission Goal: "${mission}"
-    Candidate: ${JSON.stringify(candidate)}
-    
-    Previous steps results (if any):
-    ${JSON.stringify(previousResults || {})}
-    
-    Tool execution outputs:
-    ${JSON.stringify(toolOutputs)}
-    
-    Recruiter Feedback / Directives (if any):
-    "${feedback || 'None'}"
-    
-    Evaluate this and output:
-    1. A JSON object with the expected output schema for this agent.
-    2. An internal reasoning chain of thoughts (how you evaluated, why, what points you selected).
-    
-    Format your output EXACTLY as a JSON object matching this schema:
-    {
-      "reasoning": "Step-by-step thinking process explaining your decisions...",
-      "output": <OUTPUT_OBJECT>
-    }
-    
-    Output schemas for "output" block depending on your agentName:
-    - ScreenerAgent:
-      {
-        "summary": "profile overview...",
-        "strengths": ["strength 1", "strength 2", "strength 3"],
-        "gaps": ["gap 1", "gap 2"],
-        "readinessRating": 8
-      }
-    - VerificationAgent:
-      {
-        "githubCheck": { "status": "Verified", "reposFound": ["repo1", "repo2"], "contributions": "..." },
-        "linkedinCheck": { "status": "Verified", "tenureAverage": "...", "industryMatches": "..." },
-        "certificationCheck": { "status": "Verified", "certsVerified": ["cert1"] },
-        "summary": "overall verification sync..."
-      }
-    - InterviewerAgent:
-      {
-        "questions": [
-          { "question": "...", "targetConcept": "...", "expectedAnswer": "..." },
-          ...
-        ]
-      }
-    - OutreachAgent:
-      {
-        "subject": "...",
-        "body": "..."
-      }
-    `;
-
-    const schema = {
-      type: 'object',
-      properties: {
-        reasoning: { type: 'string' },
-        output: { type: 'object' } // dynamic depending on agent
-      },
-      required: ['reasoning', 'output']
+    const executionParams = {
+      candidate,
+      mission,
+      previousResults,
+      feedback,
+      targetTools,
+      queryLLM,
+      settings,
+      execAsync,
+      getPythonCommand
     };
 
-    try {
-      const responseData = await queryLLM({
-        prompt,
-        systemInstruction,
-        responseSchema: schema
-      });
-      result = responseData.output;
-      reasoning = responseData.reasoning;
-    } catch (llmError) {
-      console.warn(`[Agent ${agentName}] LLM call failed: ${llmError.message}. Using simulated reasoning & data.`);
-      result = generateFallbackData(agentName, candidate, mission, feedback);
-      reasoning = generateFallbackReasoning(agentName, candidate, mission, feedback);
+    let responseData = null;
+    if (agentName === 'ScreenerAgent') {
+      responseData = await ScreenerAgent.execute(executionParams);
+    } else if (agentName === 'VerificationAgent') {
+      responseData = await VerificationAgent.execute(executionParams);
+    } else if (agentName === 'InterviewerAgent') {
+      responseData = await InterviewerAgent.execute(executionParams);
+    } else if (agentName === 'OutreachAgent') {
+      responseData = await OutreachAgent.execute(executionParams);
+    } else {
+      return res.status(400).json({ error: `Unknown agent name: ${agentName}` });
     }
 
-    res.json({
-      success: true,
-      result,
-      reasoning,
-      telemetry,
-      toolLogs,
-      toolOutputs
-    });
-
+    res.json(responseData);
   } catch (error) {
     console.error(`[Agent Orchestration Error] Failed to execute step ${stepId}:`, error);
-    const result = generateFallbackData(agentName, candidate, mission, feedback);
-    const reasoning = generateFallbackReasoning(agentName, candidate, mission, feedback);
-    res.json({
-      success: true,
-      result,
-      reasoning,
-      telemetry,
-      toolLogs: ['[System Error] Failed to execute step, running fallback simulation.'],
-      warning: error.message
-    });
+    res.status(500).json({ error: 'Failed to execute agent workflow step.', details: error.message });
   }
 });
+
+// Serve static built files from frontend (for hosting environments)
+const distPath = path.join(process.cwd(), '..', 'dist');
+if (fsSync.existsSync(distPath)) {
+  app.use(express.static(distPath));
+  // Serve index.html for any non-API routes (supporting SPA routing)
+  app.get(/^(?!\/api).*/, (req, res) => {
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+  console.log(`[Hosting] Frontend static files detected at: ${distPath}. Serving production client.`);
+} else {
+  console.log('[Hosting] Running in API-only dev server mode. No frontend dist folder detected.');
+}
 
 // Start Express Server
 app.listen(PORT, () => {

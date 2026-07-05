@@ -35,5 +35,55 @@
     "alignment_explanation": "No job description provided.",
     "missing_qualifications": [],
     "analyzedAt": "2026-07-03T07:12:40.850Z"
+  },
+  {
+    "id": "gcs-1",
+    "candidate_name": "Sarah Connor",
+    "technical_score": 9,
+    "leadership_score": 10,
+    "core_competencies": [
+      "Cybersecurity",
+      "Threat Analysis",
+      "Crisis Management",
+      "Team Leadership"
+    ],
+    "red_flags": [
+      "Employment gaps due to covert operations",
+      "Multiple aliases in file histories"
+    ],
+    "recommended_interview_questions": [
+      "How do you adapt security protocols in unknown networks?",
+      "Describe leading a high-stress squad."
+    ],
+    "job_alignment_score": 8,
+    "alignment_explanation": "Strong alignment with high-security management positions. Excellent strategic planning.",
+    "missing_qualifications": [
+      "CISSP certification"
+    ],
+    "analyzedAt": "2026-07-04T12:00:00.000Z"
+  },
+  {
+    "id": "gcs-2",
+    "candidate_name": "Bruce Wayne",
+    "technical_score": 10,
+    "leadership_score": 10,
+    "core_competencies": [
+      "AI Systems Architecture",
+      "Materials Science",
+      "Advanced Cryptography",
+      "Venture Capital"
+    ],
+    "red_flags": [
+      "Frequent short absences",
+      "No references provided"
+    ],
+    "recommended_interview_questions": [
+      "Explain your methodology for building custom encryption chips.",
+      "How do you handle conflict resolution in private enterprises?"
+    ],
+    "job_alignment_score": 9,
+    "alignment_explanation": "Outstanding systems architect and tech lead background. High business strategy competency.",
+    "missing_qualifications": [],
+    "analyzedAt": "2026-07-04T13:00:00.000Z"
   }
 ]
